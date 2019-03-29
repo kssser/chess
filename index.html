@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<title>中国象棋</title>
+	<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=1">
+    <meta http-equiv="X-UA-Compatible" content="IE=Edge,chrome=1">
+	<style>
+		html,body,.container{
+			margin:0;padding:0;
+			width:100%;height:100%;overflow:hidden;
+		}
+		.container{
+			background-color:#FFE5B4;
+			position:relative;
+		}
+		.chess-container{
+			box-sizing:border-box;
+			position:absolute;
+			left:0;right:0;top:0;bottom:0;
+			margin:auto;
+		}
+		.chess{
+			box-sizing:border-box;
+			position:absolute;
+			text-align:center;
+			background-color:#fff;
+			border-radius:50%;
+			cursor:pointer;
+		}
+		.chess.focus{
+			border-color:#f50 !important;
+		}
+	</style>
+</head>
+<body>
+	<div class="container" id="container"></div>
+	<script>
+		// !!!!!!碰撞检测default开始,思路:获取沿途数据点(pos),根据board.data查看是否碰撞
+		
+		function Game(opts){
+			var self=this;
+			this.el=document.createElement('div');
+			this.unit=40;
+			this.backgroundColor='#FFE5B4';
+			this.setStyle=function(){
+				self.el.style.width=self.unit*9+'px';
+				self.el.style.height=self.unit*10+'px';
+				self.el.style.padding=(self.unit/2-1)+'px';
+				self.el.style.backgroundColor=self.backgroundColor;
+				self.el.setAttribute('class','chess-container');
+				return self;
+			};
+			this.state={
+				focus:0,
+				first:0,
+				turnTo:0
+			};
+			this.controls={
+				turn:function(){
+					this.focus.remove(self.chess.data[self.state.focus]);
+					self.state.turnTo=++self.state.turnTo%2;
+					return self;
+				},
+				focus:{
+					add:function(chess){
+						self.state.focus=chess.id;
+						chess.el.classList.add('focus');
+						return self;
+					},
+					remove:function(chess){
+						self.state.focus=0;
+						chess.el.classList.remove('focus');
+						return self;
+					}
+				},
+				verify:{
+					collision:function(chess,pos){	// 不包含pos
+						var iCollision=0;
+						switch(chess.name){
+							case '帥':
+							case '將':
+							case '士':
+							case '兵':
+							case '卒':
+								return iCollision;
+								break;
+							case '相':
+							case '象':
+								break;
+							case '马':
+								break;
+							default:
+								
+						}
+						return iCollision;
+					},
+					/*
+						move=>当前问题:!!!
+							将，士可移动到米格之外
+							象可以过河
+							不能卡马腿，象腿
+							兵可以后退，没过河可以左右移动
+							棋子碰撞检测
+					 */
+					move:function(chess,aimPos){
+						var distance=0;
+						aimPos.forEach(function(item,index){
+							distance+=Math.pow(item-chess.pos[index],2);
+						});
+						return chess.rule.move.distance.indexOf(distance)!==-1;
+					},
+					kill:function(chess,killedChess){
+						// !!!暂时用移动代替
+						return this.move(chess,killedChess.pos);
+					}
+				},
+				replay:function(){
+					self.state.first=Math.random()>.5?0:1;
+					self.chess.delayInit(self);
+					return self;
+				}
+			};
+			this.board=new _Board(self);
+			this.chess=new _Chess(self);
+			this.init=function(){
+				if(opts&&opts.container){
+					self.state.first=Math.random()>.5?0:1;
+					self.board.init();
+					self.chess.init();
+					opts.container.appendChild(self.setStyle().el);
+				}
+				return self;
+			};
+			return self.init();
+		}
+
+		function _Board(game){
+			var self=this;
+			this.el=document.createElement('canvas');
+			this._ctx=self.el.getContext('2d');
+			this.width=game.unit*8;
+			this.height=game.unit*9;
+			this.color='#282923';
+			this.font={
+				size:20,
+				set:function(font,pos,angle){
+					self._ctx.font=this.size+'px Arial';
+					self._ctx.textAlign='center';
+					self._ctx.textBaseline='Middle';
+					self._ctx.fillStyle=self.color;
+					self._ctx.save();
+					self._ctx.translate(pos[0],pos[1]);
+					self._ctx.rotate(angle?angle*Math.PI/180:0);
+					self._ctx.fillText(font,0,this.size/3);
+					self._ctx.restore();
+				}
+			};
+			this.data=[];
+			this.layout={
+				add:function(pos,chess){
+					if(chess.pos)
+						self.data[chess.pos[0]][chess.pos[1]]=undefined;
+					self.data[pos[0]][pos[1]]=chess;
+					return self;
+				},
+				remove:function(pos){
+					self.data[pos[0]][pos[1]]=undefined;
+					return self;
+				}
+			};
+			this.init=function(){
+				self.el.width=self.width;
+				self.el.height=self.height;
+				// 绘制网格
+				var i=9,j=10;
+				self._ctx.beginPath();
+				self._ctx.strokeStyle=self.color;
+				// 竖线
+				while(i--){
+					self._ctx.moveTo(i*game.unit,0);
+					self._ctx.lineTo(i*game.unit,self.height);
+					self._ctx.stroke();
+					self.data.push([]);
+				}
+				// 横线
+				while(j--){
+					self._ctx.moveTo(0,j*game.unit);
+					self._ctx.lineTo(self.width,j*game.unit);
+					self._ctx.stroke();
+					self.data.forEach(function(item){
+						item.push([undefined]);
+					});
+				}
+				// 斜线
+				[[[3,0],[5,2]],[[3,2],[5,0]],[[3,7],[5,9]],[[3,9],[5,7]]].forEach(function(item){
+					self._ctx.moveTo(item[0][0]*game.unit,item[0][1]*game.unit);
+					self._ctx.lineTo(item[1][0]*game.unit,item[1][1]*game.unit);
+					self._ctx.stroke();
+				});
+				self._ctx.closePath();
+				// 楚河汉界
+				self._ctx.clearRect(1,4*game.unit+1,self.width-2,game.unit-2);
+				[
+					{font:'楚',pos:[1,4],angle:-90},
+					{font:'河',pos:[2,4],angle:-90},
+					{font:'汉',pos:[6,4],angle:90},
+					{font:'界',pos:[5,4],angle:90}
+				].forEach(function(item){
+					self.font.set(item.font,[(item.pos[0]+.5)*game.unit,(item.pos[1]+.5)*game.unit],item.angle);
+				});
+				self.el.style.border='1px solid '+self.color;
+				self.el.addEventListener('click',function(e){
+					if(game.state.focus!==0){
+						var x=e.offsetX,y=e.offsetY,
+							aimPos=[~~(x/game.unit),~~(y/game.unit)],
+							chess=game.chess.data[game.state.focus];
+						[x%game.unit,y%game.unit].forEach(function(item,index){
+							item>=game.unit/2&&aimPos[index]++;
+						});
+						if(game.controls.verify.move(chess,aimPos)){
+							// !!!碰撞检测
+							game.chess.setPosition(chess,aimPos);
+							game.controls.turn();
+						}
+					}
+				},!1);
+				game.el.appendChild(self.el);
+			};
+			return self;
+		}
+
+		function _Chess(game){
+			var self=this;
+			this.container=document.createElement('div');
+			this.size=30;
+			this.data={};
+			this._species=[
+				{
+					name:'帥',
+					number:1,
+					pos:[[4,9]],
+					type:0,
+					rule:{
+						move:{
+							distance:[1],	// 距离²
+							limit:[]
+						},
+					}
+				},
+				{
+					name:'士',
+					number:2,
+					pos:[[3,9],[5,9]],
+					type:0,
+					rule:{
+						move:{
+							distance:[2],	// 距离²
+							limit:[]
+						},
+					}
+				},
+				{
+					name:'相',
+					number:2,
+					pos:[[2,9],[6,9]],
+					type:0,
+					rule:{
+						move:{
+							distance:[8],	// 距离²
+							limit:[]
+						},
+					}
+				},
+				{
+					name:'馬',
+					number:2,
+					pos:[[1,9],[7,9]],
+					type:0,
+					rule:{
+						move:{
+							distance:[5],	// 距离²
+							limit:[]
+						},
+					}
+				},
+				{
+					name:'車',
+					number:2,
+					pos:[[0,9],[8,9]],
+					type:0,
+					rule:{
+						move:{
+							distance:[1,4,9,16,25,36,49,64,81],	// 距离²
+							limit:[]
+						},
+					}
+				},
+				{
+					name:'炮',
+					number:2,
+					pos:[[1,7],[7,7]],
+					type:0,
+					rule:{
+						move:{
+							distance:[1,4,9,16,25,36,49,64,81],	// 距离²
+							limit:[]
+						},
+					}
+				},
+				{
+					name:'兵',
+					number:5,
+					pos:[[0,6],[2,6],[4,6],[6,6],[8,6]],
+					type:0,
+					rule:{
+						move:{
+							distance:[1],	// 距离²
+							limit:[]
+						},
+					}
+				},
+				{
+					name:'將',
+					number:1,
+					pos:[[4,0]],
+					type:1,
+					rule:{
+						move:{
+							distance:[1],	// 距离²
+							limit:[]
+						},
+					}
+				},
+				{
+					name:'士',
+					number:2,
+					pos:[[3,0],[5,0]],
+					type:1,
+					rule:{
+						move:{
+							distance:[2],	// 距离²
+							limit:[]
+						},
+					}
+				},
+				{
+					name:'象',
+					number:2,
+					pos:[[2,0],[6,0]],
+					type:1,
+					rule:{
+						move:{
+							distance:[8],	// 距离²
+							limit:[]
+						},
+					}
+				},
+				{
+					name:'馬',
+					number:2,
+					pos:[[1,0],[7,0]],
+					type:1,
+					rule:{
+						move:{
+							distance:[5],	// 距离²
+							limit:[]
+						},
+					}
+				},
+				{
+					name:'車',
+					number:2,
+					pos:[[0,0],[8,0]],
+					type:1,
+					rule:{
+						move:{
+							distance:[1,4,9,16,25,36,49,64,81],	// 距离²
+							limit:[]
+						},
+					}
+				},
+				{
+					name:'炮',
+					number:2,
+					pos:[[1,2],[7,2]],
+					type:1,
+					rule:{
+						move:{
+							distance:[1,4,9,16,25,36,49,64,81],	// 距离²
+							limit:[]
+						},
+					}
+				},
+				{
+					name:'卒',
+					number:5,
+					pos:[[0,3],[2,3],[4,3],[6,3],[8,3]],
+					type:1,
+					rule:{
+						move:{
+							distance:[1],	// 距离²
+							limit:[]
+						},
+					}
+				}
+			];
+			this.setPosition=function(chess,pos){
+				chess.el.style.left=pos[0]*game.unit+(game.unit-self.size)/2+'px';
+				chess.el.style.top=pos[1]*game.unit+(game.unit-self.size)/2+'px';
+				chess.live?game.board.layout.add(pos,chess):game.board.layout.remove(pos);
+				chess.pos=pos;	// chess.pos赋值要在board.layout之前,因为要使用chess.pos
+				return self;
+			};
+			this.create=function(data){
+				var el=document.createElement('div'),
+					chess=Object.assign({
+						el:el,
+						live:!0
+					},data);
+				el.setAttribute('class','chess');
+				el.innerHTML=data.name;
+				el.style.width=el.style.height=self.size+'px';
+				el.style.border='2px solid transparent';
+				el.style.lineHeight=self.size-4+'px';
+				el.style.color=data.type?'#000':'#F00';
+				el.addEventListener('click',function(){
+					var state=game.state;
+					if(state.focus===0){
+						state.turnTo===chess.type&&game.controls.focus.add(chess);
+					}else{
+						if(state.focus===chess.id){
+							game.controls.focus.remove(chess);
+						}else{
+							var focusChess=self.data[state.focus];
+							if(focusChess.type===chess.type){
+								game.controls.focus.remove(focusChess).controls.focus.add(chess);
+							}else{
+								if(game.controls.verify.kill(focusChess,chess)){
+									console.log('kill it');
+									// !!!先kill再setPosition 因为setPosition中有布局函数,需先移除之前的再添加否则会将新添加的移除
+								}
+							}
+						}
+					}
+				},!1);
+				self.container.appendChild(el);
+				self.data[data.id]=chess;
+				return this;
+			};
+			this.setStyle=function(){
+				self.size>game.unit&&(self.size=game.unit);
+				self.container.style.width=self.container.style.height=0;
+				self.container.style.position='absolute';
+				self.container.style.left=self.container.style.top=0;
+				return self;
+			};
+			this.controls={
+				death:function(id){
+					var chess=self.data[id];
+					chess.live=!1;
+					chess.el.style.display='none';
+					self.setPosition(chess,[-1,-1]);
+					return self;
+				},
+				resurgence:function(id,pos){
+					var chess=self.data[id];
+					chess.live=!0;
+					self.setPosition(chess,pos);
+					chess.el.style.display='block';
+					return self;
+				},
+				reset:function(type){
+					for(var p in self.data){
+						var chess=self.data[p];
+						chess.el.style.transform='rotate('+(chess.type===type?0:180)+'deg)';
+						self.controls.resurgence(p,[chess.initPos[0],type?9-chess.initPos[1]:chess.initPos[1]]);
+					}
+					return self;
+				}
+			};
+			this.init=function(){
+				var _id=0;
+				self._species.forEach(function(item){
+					while(item.number--){
+						var data=Object.assign({id:++_id,initPos:item.pos[item.number]},item);
+						delete data.pos;
+						self.create(data);
+					}
+				});
+				self.controls.reset(game.state.first);
+				game.el.appendChild(self.setStyle().container);
+				return self;
+			};
+			return self;
+		}
+
+		var g=new Game({
+			container:document.querySelector('#container')
+		});
+
+	</script>
+</body>
+</html>
