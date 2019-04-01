@@ -36,7 +36,6 @@
 <body>
 	<div class="container" id="container"></div>
 	<script>
-		// !!!!!!碰撞检测default开始,思路:获取沿途数据点(pos),根据board.data查看是否碰撞
 		
 		function Game(opts){
 			var self=this;
@@ -58,7 +57,7 @@
 			};
 			this.controls={
 				turn:function(){
-					this.focus.remove(self.chess.data[self.state.focus]);
+					self.state.focus>0&&this.focus.remove(self.chess.data[self.state.focus]);
 					self.state.turnTo=++self.state.turnTo%2;
 					return self;
 				},
@@ -69,7 +68,7 @@
 						return self;
 					},
 					remove:function(chess){
-						self.state.focus=0;
+						self.state.focus===chess.id&&(self.state.focus=0);
 						chess.el.classList.remove('focus');
 						return self;
 					}
@@ -78,20 +77,35 @@
 					collision:function(chess,pos){	// 不包含pos
 						var iCollision=0;
 						switch(chess.name){
-							case '帥':
-							case '將':
-							case '士':
-							case '兵':
-							case '卒':
-								return iCollision;
+							case '車':
+							case '炮':
+								var max=0,min=0;
+								if(chess.pos[0]===pos[0]){
+									var x=pos[0],
+										dis=pos[1]-chess.pos[1];
+									max=dis>0?pos[1]:chess.pos[1];
+									min=dis>0?chess.pos[1]:pos[1];
+									for(var i=1;i<Math.abs(dis);i++)
+										self.board.layout.exist([x,min+i])&&iCollision++;
+								}else{
+									var y=pos[1],
+										dis=pos[0]-chess.pos[0];
+									max=dis>0?pos[0]:chess.pos[0];
+									min=dis>0?chess.pos[0]:pos[0];
+									for(var i=1;i<Math.abs(dis);i++)
+										self.board.layout.exist([min+i,y])&&iCollision++;
+								}
 								break;
 							case '相':
 							case '象':
+								self.board.layout.exist([(chess.pos[0]+pos[0])/2,(chess.pos[1]+pos[1])/2])&&iCollision++;
 								break;
-							case '马':
+							case '馬':
+								var x=Math.abs(pos[0]-chess.pos[0]),
+									y=Math.abs(pos[1]-chess.pos[1]),
+									cPos=x>y?[(chess.pos[0]+pos[0])/2,chess.pos[1]]:[chess.pos[0],(chess.pos[1]+pos[1])/2];
+								self.board.layout.exist(cPos)&&iCollision++;
 								break;
-							default:
-								
 						}
 						return iCollision;
 					},
@@ -99,9 +113,7 @@
 						move=>当前问题:!!!
 							将，士可移动到米格之外
 							象可以过河
-							不能卡马腿，象腿
 							兵可以后退，没过河可以左右移动
-							棋子碰撞检测
 					 */
 					move:function(chess,aimPos){
 						var distance=0;
@@ -110,14 +122,14 @@
 						});
 						return chess.rule.move.distance.indexOf(distance)!==-1;
 					},
-					kill:function(chess,killedChess){
-						// !!!暂时用移动代替
-						return this.move(chess,killedChess.pos);
+					kill:function(chess,pos){
+						return this.collision(chess,pos)===(chess.name==='炮'?1:0);
 					}
 				},
 				replay:function(){
 					self.state.first=Math.random()>.5?0:1;
-					self.chess.delayInit(self);
+					self.chess.controls.reset();
+					self.state.turnTo=0;
 					return self;
 				}
 			};
@@ -159,14 +171,18 @@
 			this.data=[];
 			this.layout={
 				add:function(pos,chess){
-					if(chess.pos)
+					if(Array.isArray(chess.pos)&&chess.pos[0]!==-1&&chess.pos[1]!==-1)
 						self.data[chess.pos[0]][chess.pos[1]]=undefined;
 					self.data[pos[0]][pos[1]]=chess;
 					return self;
 				},
 				remove:function(pos){
-					self.data[pos[0]][pos[1]]=undefined;
+					if(pos[0]!==-1&&pos[1]!==-1)
+						self.data[pos[0]][pos[1]]=undefined;
 					return self;
+				},
+				exist:function(pos){
+					return self.data[pos[0]][pos[1]]===undefined?!1:!0;
 				}
 			};
 			this.init=function(){
@@ -189,7 +205,7 @@
 					self._ctx.lineTo(self.width,j*game.unit);
 					self._ctx.stroke();
 					self.data.forEach(function(item){
-						item.push([undefined]);
+						item.push(undefined);
 					});
 				}
 				// 斜线
@@ -218,8 +234,9 @@
 						[x%game.unit,y%game.unit].forEach(function(item,index){
 							item>=game.unit/2&&aimPos[index]++;
 						});
-						if(game.controls.verify.move(chess,aimPos)){
-							// !!!碰撞检测
+						if(self.layout.exist(aimPos)){
+							self.data[aimPos[0]][aimPos[1]].el.click();
+						}else if(game.controls.verify.move(chess,aimPos)&&game.controls.verify.collision(chess,aimPos)===0){
 							game.chess.setPosition(chess,aimPos);
 							game.controls.turn();
 						}
@@ -244,7 +261,10 @@
 					rule:{
 						move:{
 							distance:[1],	// 距离²
-							limit:[]
+							limit:{
+								x:[3,5],
+								y:[0,2]
+							}
 						},
 					}
 				},
@@ -255,8 +275,11 @@
 					type:0,
 					rule:{
 						move:{
-							distance:[2],	// 距离²
-							limit:[]
+							distance:[2],
+							limit:{
+								x:[3,5],
+								y:[0,2]
+							}
 						},
 					}
 				},
@@ -267,8 +290,11 @@
 					type:0,
 					rule:{
 						move:{
-							distance:[8],	// 距离²
-							limit:[]
+							distance:[8],
+							limit:{
+								x:[0,8],
+								y:[0,4]
+							}
 						},
 					}
 				},
@@ -279,8 +305,7 @@
 					type:0,
 					rule:{
 						move:{
-							distance:[5],	// 距离²
-							limit:[]
+							distance:[5]
 						},
 					}
 				},
@@ -291,8 +316,7 @@
 					type:0,
 					rule:{
 						move:{
-							distance:[1,4,9,16,25,36,49,64,81],	// 距离²
-							limit:[]
+							distance:[1,4,9,16,25,36,49,64,81]
 						},
 					}
 				},
@@ -303,8 +327,7 @@
 					type:0,
 					rule:{
 						move:{
-							distance:[1,4,9,16,25,36,49,64,81],	// 距离²
-							limit:[]
+							distance:[1,4,9,16,25,36,49,64,81]
 						},
 					}
 				},
@@ -315,8 +338,7 @@
 					type:0,
 					rule:{
 						move:{
-							distance:[1],	// 距离²
-							limit:[]
+							distance:[1]
 						},
 					}
 				},
@@ -327,8 +349,11 @@
 					type:1,
 					rule:{
 						move:{
-							distance:[1],	// 距离²
-							limit:[]
+							distance:[1],
+							limit:{
+								x:[3,5],
+								y:[0,2]
+							}
 						},
 					}
 				},
@@ -339,8 +364,11 @@
 					type:1,
 					rule:{
 						move:{
-							distance:[2],	// 距离²
-							limit:[]
+							distance:[2],
+							limit:{
+								x:[3,5],
+								y:[0,2]
+							}
 						},
 					}
 				},
@@ -351,8 +379,11 @@
 					type:1,
 					rule:{
 						move:{
-							distance:[8],	// 距离²
-							limit:[]
+							distance:[8],
+							limit:{
+								x:[0,8],
+								y:[0,4]
+							}
 						},
 					}
 				},
@@ -363,8 +394,7 @@
 					type:1,
 					rule:{
 						move:{
-							distance:[5],	// 距离²
-							limit:[]
+							distance:[5]
 						},
 					}
 				},
@@ -375,8 +405,7 @@
 					type:1,
 					rule:{
 						move:{
-							distance:[1,4,9,16,25,36,49,64,81],	// 距离²
-							limit:[]
+							distance:[1,4,9,16,25,36,49,64,81]
 						},
 					}
 				},
@@ -387,8 +416,7 @@
 					type:1,
 					rule:{
 						move:{
-							distance:[1,4,9,16,25,36,49,64,81],	// 距离²
-							limit:[]
+							distance:[1,4,9,16,25,36,49,64,81]
 						},
 					}
 				},
@@ -399,8 +427,7 @@
 					type:1,
 					rule:{
 						move:{
-							distance:[1],	// 距离²
-							limit:[]
+							distance:[1]
 						},
 					}
 				}
@@ -408,8 +435,8 @@
 			this.setPosition=function(chess,pos){
 				chess.el.style.left=pos[0]*game.unit+(game.unit-self.size)/2+'px';
 				chess.el.style.top=pos[1]*game.unit+(game.unit-self.size)/2+'px';
-				chess.live?game.board.layout.add(pos,chess):game.board.layout.remove(pos);
-				chess.pos=pos;	// chess.pos赋值要在board.layout之前,因为要使用chess.pos
+				chess.live?game.board.layout.add(pos,chess):game.board.layout.remove(chess.pos);
+				chess.pos=[].concat(pos);	// chess.pos赋值要在board.layout之前,因为要使用chess.pos
 				return self;
 			};
 			this.create=function(data){
@@ -436,9 +463,12 @@
 							if(focusChess.type===chess.type){
 								game.controls.focus.remove(focusChess).controls.focus.add(chess);
 							}else{
-								if(game.controls.verify.kill(focusChess,chess)){
-									console.log('kill it');
-									// !!!先kill再setPosition 因为setPosition中有布局函数,需先移除之前的再添加否则会将新添加的移除
+								if(game.controls.verify.move(focusChess,chess.pos)&&game.controls.verify.kill(focusChess,chess.pos)){
+									var pos=[].concat(chess.pos);
+									self.controls.death(chess.id);
+									self.setPosition(focusChess,pos);
+									console.log('略略略、吃');
+									game.controls.turn();
 								}
 							}
 						}
@@ -446,7 +476,7 @@
 				},!1);
 				self.container.appendChild(el);
 				self.data[data.id]=chess;
-				return this;
+				return self;
 			};
 			this.setStyle=function(){
 				self.size>game.unit&&(self.size=game.unit);
@@ -460,6 +490,7 @@
 					var chess=self.data[id];
 					chess.live=!1;
 					chess.el.style.display='none';
+					game.controls.focus.remove(chess);
 					self.setPosition(chess,[-1,-1]);
 					return self;
 				},
@@ -470,11 +501,12 @@
 					chess.el.style.display='block';
 					return self;
 				},
-				reset:function(type){
+				reset:function(){
 					for(var p in self.data){
 						var chess=self.data[p];
-						chess.el.style.transform='rotate('+(chess.type===type?0:180)+'deg)';
-						self.controls.resurgence(p,[chess.initPos[0],type?9-chess.initPos[1]:chess.initPos[1]]);
+						Array.isArray(chess.pos)&&this.death(chess.id);
+						chess.el.style.transform='rotate('+(chess.type===game.state.first?0:180)+'deg)';
+						self.controls.resurgence(p,[chess.initPos[0],game.state.first?9-chess.initPos[1]:chess.initPos[1]]);
 					}
 					return self;
 				}
@@ -488,7 +520,7 @@
 						self.create(data);
 					}
 				});
-				self.controls.reset(game.state.first);
+				self.controls.reset();
 				game.el.appendChild(self.setStyle().container);
 				return self;
 			};
